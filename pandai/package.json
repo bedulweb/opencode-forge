@@ -5,7 +5,7 @@
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc -p packages/core"
+    "typecheck": "tsc -p packages/core && tsc -p apps/web"
   },
   "devDependencies": {
     "@types/bun": "1.2.23",
