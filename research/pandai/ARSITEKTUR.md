@@ -148,3 +148,76 @@ pandai/
 ├── bot/            # notifikasi Telegram/WA (di Worker)
 └── vm/bootstrap.sh # setup runner + opencode web + tunnel
 ```
+
+## 6. Multi-project (revisi)
+
+Dengan banyak proyek, **otak dipindah dari GitHub Actions ke control plane di Cloudflare**. Alasannya:
+- Event dari banyak repo masuk ke satu tempat, lewat webhook GitHub App.
+- Scheduler perlu melihat semua proyek sekaligus untuk konkurensi, prioritas, dan budget global.
+- Node menerima job langsung lewat koneksi WebSocket-nya, sehingga tidak perlu memasang workflow agent di setiap repo.
+
+GitHub tetap menjadi sumber kebenaran kartu dan kode. Di repo proyek, Actions hanya menjalankan **CI gate** (di Depot).
+
+```
+GitHub App "Pandai" (dipasang di repo-repo proyek)
+   │ webhook semua repo
+   ▼
+Control plane (Cloudflare: Worker + Durable Object + D1)
+   • registry proyek + config      • scheduler global (fair, prioritas, budget)
+   • antrean job + state           • registry node (online, kapasitas, kemampuan)
+   │ dispatch lewat WebSocket node
+   ▼
+Node pool (VPS utama, VPS tambahan, Daytona cadangan)
+   • cache clone per proyek: /var/pandai/projects/<owner>/<repo>
+   • worktree per ticket; job berjalan di container per proyek (isolasi toolchain + secret)
+```
+
+### Konsep data
+| Entitas | Disimpan di | Isi |
+|---|---|---|
+| Workspace | D1 | Kamu, budget global, konkurensi global |
+| Project | `pandai.yml` di repo + cache D1 | Repo, gate, setup, model, budget, prioritas, kebutuhan node, config Doppler |
+| Kartu / ticket | GitHub Issues | Sama seperti sebelumnya; satu board GitHub Project bisa memuat banyak repo |
+| Job | D1 (Durable Object) | Antrean, status, node, percobaan, biaya |
+| Node | D1 | Token (hash), kemampuan (`docker`, `node22`, …), slot, heartbeat |
+| Biaya | D1 + komentar issue | Per ticket, per proyek, per bulan |
+
+### Contoh `pandai.yml` di tiap repo
+```yaml
+project: wazapin-api
+setup: pnpm install --frozen-lockfile
+gate:                       # dijalankan CI gate (Depot) + dicek Pandai
+  test: pnpm test
+  typecheck: pnpm typecheck
+  lint: pnpm lint
+protected_tests: ["**/*.test.ts", "test/**"]
+models: { coder: <model-kuat>, reviewer: <model-kuat>, chat: <model-cepat> }
+budget: { ticket_usd: 3, month_usd: 100 }
+concurrency: 2              # maksimal ticket paralel di proyek ini
+priority: high              # high | normal | low
+node: { requires: [docker, node22] }
+secrets: { doppler_project: wazapin, doppler_config: pandai-agent }
+```
+
+### Scheduler global
+1. Kumpulkan frontier dari semua proyek.
+2. Saring berdasarkan budget bulanan proyek dan konkurensi per proyek.
+3. Urutkan menurut prioritas proyek, lalu umur antrean (fair, supaya proyek kecil tidak kelaparan).
+4. Pasangkan ke node yang punya slot dan memenuhi `node.requires`.
+5. Kalau tidak ada node yang cocok, nyalakan node Daytona (API) atau biarkan antre.
+
+### Isolasi antar-proyek di node yang sama
+- Setiap job berjalan dalam container proyeknya. Isinya hanya secret proyek itu (dari Doppler config proyek) dan hanya clone repo itu.
+- Token GitHub per job adalah installation token GitHub App yang dibatasi ke repo proyek itu dan berumur pendek.
+- Sesi chat juga dibuka di container proyek kartu tersebut.
+
+### Onboarding proyek baru
+1. Pasang GitHub App Pandai di repo.
+2. Di dashboard, klik "Tambah project". Pandai membuka PR berisi `pandai.yml`, workflow CI gate (Depot), dan label kolom.
+3. Merge PR. Proyek muncul di dashboard dan siap menerima kartu.
+
+### Dashboard multi-project
+- **Workspace:** semua proyek dalam satu layar (kartu per kolom, biaya bulan ini vs budget, job berjalan) dan satu **inbox "✋ Butuh kamu" gabungan** lintas proyek.
+- **Per proyek:** kanban, detail kartu, biaya, dan setelan (`pandai.yml`).
+- **Chat:** ada level workspace ("proyek mana yang macet?") dan level kartu (sesi OpenCode di proyek itu).
+- **Ticket lintas proyek** (misalnya API backend dan UI frontend): relasi "blocked by" boleh antar-repo. Scheduler membaca edge dari GitHub, atau dari D1 kalau GitHub tidak mendukungnya.
