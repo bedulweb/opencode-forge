@@ -1,117 +1,121 @@
-# Desain Pandai v2: tool internal
+# Desain Pandai v3: tool internal di atas GitHub, Depot, dan Doppler
 
-Tanggal: 2026-10-11. Menggantikan arah "produk open source" di `RISET.md`. Riset di sana tetap berlaku sebagai dasar bukti.
+Tanggal: 2026-10-11. Riset dasar ada di `RISET.md`.
+
+**Perubahan dari v2.** Sumber daya yang tersedia adalah kredit Depot $5000 dan Doppler (2–3 tahun). Dengan itu, eksekusi dipindah dari VM yang tidak persisten ke **GitHub Actions di runner Depot**. Akibatnya tidak ada daemon yang harus terus hidup, tidak ada database, dan tidak perlu backup. VM tidak lagi dibutuhkan untuk eksekusi.
 
 ## Masalah yang diselesaikan
 
-1. **Manual itu melelahkan.** Setiap langkah agent harus ditanya dan ditunggui satu per satu, jadi rasanya seperti mengasuh bayi.
+1. **Mode manual melelahkan.** Setiap langkah agent harus ditanya satu per satu, seperti mengasuh bayi.
 2. **Autopilot penuh meleset.** Hasilnya tidak sesuai maksud.
-3. **Pekerjaan tidak tercatat.** Ide kasar, bug, dan perubahan tidak jelas statusnya: apa yang berubah, kapan, dan kenapa.
-4. **VM tidak awet.** VM 6 CPU / 16 GB RAM mati setiap 2–3 hari, sehingga pekerjaan bisa hilang.
+3. **Pekerjaan tidak terlacak.** Ide kasar, bug, dan perubahan tidak jelas jejaknya (apa, kapan, kenapa).
+4. **VM tidak persisten.** VM mati setiap 2–3 hari dan pekerjaan bisa hilang.
 
-## Prinsip: otonomi berpos
+## Prinsip: otonomi dengan pos pemeriksaan
 
-Kamu hanya terlibat di **dua pos tetap**, ditambah **antrean interupsi** yang dijawab asinkron. Di antara pos, agent bekerja sendiri.
+Kamu hanya terlibat di dua pos tetap, ditambah antrean interupsi yang dijawab asinkron:
 
-- **Pos 1: setujui definisi selesai.** Spec, ticket, dan acceptance criteria. Ini tuas penyelarasan terkuat dan murah ditinjau.
-- **Pos 2: tinjau PR.** Riset METR menunjukkan PR agent hampir tidak pernah layak merge tanpa ditinjau.
-- **Antrean "Butuh kamu".** Muncul hanya kalau agent BLOCKED, spec mustahil, budget habis, atau gagal berulang. Kamu dapat notifikasi dan menjawab kapan sempat.
+- **Pos 1: menyetujui definisi selesai.** Yang disetujui adalah spec, ticket, dan acceptance criteria.
+- **Pos 2: meninjau PR.**
+- **Antrean "Butuh kamu".** Card masuk ke sini kalau agent BLOCKED, spec ternyata mustahil, budget habis, atau gagal berulang.
 
-## Board
+## Board (GitHub Issues + Projects)
 
 ```
 💡 Ide ─┐
         ├─► 🔨 Tempa ─► ✅ Siap ─► 🔁 Jalan ─► 👀 Tinjau ─► 🎉 Selesai
 🐞 Bug ─┘   (async)    [Pos 1]   (otonom)   [Pos 2]
-                                   │
-                                   └─► ✋ Butuh kamu ─(dijawab)─► kembali ke Jalan
+                                   └─► ✋ Butuh kamu ─(dijawab)─► Jalan
 ```
 
-| Kolom | Siapa | Apa yang terjadi |
+| Kolom | Apa yang terjadi |
+|---|---|
+| 💡 Ide | Tulis satu kalimat dari HP, CLI, atau chat |
+| 🐞 Bug | Agent menjalankan fase 1 `diagnosing-bugs`: membuat test repro yang merah, lalu push ke branch |
+| 🔨 Tempa | Grilling asinkron lewat komentar issue: satu ronde pertanyaan, masing-masing dengan rekomendasi. Thread issue berfungsi sebagai memori, jadi setiap ronde adalah job stateless. Hasil akhirnya spec dan ticket (sub-issue dengan relasi blokir) |
+| ✅ Siap | **Pos 1.** Card ini sudah disetujui |
+| 🔁 Jalan | Per ticket: test-first dikunci → `tdd` → branch di-push setiap checkpoint → PR draft. Budget dan timeout berlaku |
+| ✋ Butuh kamu | Pertanyaan diposting di issue. Balasanmu memicu kelanjutan |
+| 👀 Tinjau | **Pos 2.** Gate CI hijau, ada review dua sumbu, ringkasan biaya, dan risiko |
+| 🎉 Selesai | Merge lewat merge queue |
+
+**Pelacakan.** Timeline issue/PR mencatat semuanya: perpindahan kolom, tanya-jawab, commit, hasil gate, biaya, dan review.
+
+**State.** State disimpan di **label** (`pandai:tempa`, `pandai:jalan`, …), karena perubahan label bisa memicu workflow. Field Status di Project disinkronkan dari label. Kalau card digeser langsung di board, perubahan itu ditangkap oleh reconciler cron. Catatan: perlu diverifikasi, tapi setahu saya perubahan field Project v2 tidak bisa memicu GitHub Actions secara langsung.
+
+## Eksekusi: GitHub Actions sebagai otak, Depot sebagai otot
+
+| Workflow | Pemicu | Isi |
 |---|---|---|
-| 💡 Ide | kamu | Tulis satu kalimat saja, dari HP (GitHub mobile), CLI `pandai ide "…"`, atau chat |
-| 🐞 Bug | kamu | Tulis gejala. Agent otomatis menjalankan fase 1 `diagnosing-bugs`, yaitu membangun repro yang gagal (merah) |
-| 🔨 Tempa | agent + kamu, asinkron | Agent membaca codebase, lalu memakai `grilling` lewat komentar issue: satu ronde pertanyaan, masing-masing dengan rekomendasi. Kamu cukup balas "ok semua kecuali #3: …". Hasilnya spec, ticket (sub-issue dengan relasi blokir), acceptance criteria, glosarium/ADR. Kalau mau sesi langsung, buka OpenCode di card itu |
-| ✅ Siap | **Pos 1** | Memindahkan card ke kolom ini = setuju. Untuk bug, test repro merah adalah definisi selesainya, jadi cukup dicek sekilas |
-| 🔁 Jalan | agent | Per ticket: test-first dikunci → `tdd` → gate (test/typecheck/lint dijalankan Pandai) + proteksi test → review → perbaikan maksimal 2 ronde. Ada budget. Branch WIP di-push di setiap checkpoint. Progres singkat ditulis di komentar |
-| ✋ Butuh kamu | interupsi | Pertanyaan dan konteks diposting di issue, lalu notifikasi dikirim. Jawabanmu di komentar membuat card lanjut otomatis |
-| 👀 Tinjau | **Pos 2** | PR draft dengan ringkasan, bukti gate, biaya, risiko, dan tingkat bahaya merge. Approve lalu merge, atau beri komentar yang menjadi finding dan card kembali ke Jalan |
-| 🎉 Selesai | — | Merge selesai |
+| `pandai-tempa` | `issues` (label ide), `issue_comment` dari pemilik | Satu ronde grilling, atau `to-spec` + `to-tickets` saat kamu membalas `/siap` |
+| `pandai-bug` | label `bug` | `diagnosing-bugs` fase 1 → branch berisi test repro merah |
+| `pandai-scheduler` | cron, merge PR, perubahan label | Hitung frontier dari relasi blokir, batasi konkurensi (2–3), lalu dispatch `pandai-jalan` |
+| `pandai-jalan` | `workflow_dispatch` per ticket | Agent (OpenCode/Claude) di runner Depot. Idempotent: kalau job mati, job dilanjutkan dari branch terakhir |
+| **CI gate** (workflow terpisah) | PR | Test, typecheck, dan lint, ditambah cek proteksi test sebagai *required status check*. Job ini **terpisah dari job agent**, jadi agent tidak bisa memengaruhinya |
+| `pandai-review` | CI hijau | Skill `code-review` Matt dalam konteks segar. Finding spec yang memblokir memberi label `pandai:fix`, dan card kembali ke Jalan (maksimal 2 ronde) |
+| Merge queue (bawaan GitHub) | Approve | Gate dijalankan ulang di atas hasil merge, sesuai rekomendasi riset |
 
-**Pelacakan.** Timeline issue berfungsi sebagai log otomatis: perpindahan kolom, tanya-jawab, commit, hasil gate, biaya, dan link PR. Field di Project: Fase, Biaya, Percobaan, PR. Jadi satu card menyimpan seluruh sejarah perubahannya.
+- **Runner Depot:** `depot-ubuntu-24.04-4` atau `-8`. Tarifnya per detik, sekitar $0,006/menit per 2 vCPU, jadi job 45 menit dengan 4 vCPU kira-kira $0,54. Kredit $5000 cukup untuk ribuan jam. Biaya LLM tetap komponen terbesar.
+- **Timeout:** set `timeout-minutes` per job (misalnya 90). Ticket memang sebaiknya kecil (≤1–3 jam kerja manusia). Batas maksimum job di runner Depot belum terverifikasi.
+- **Depot Cache dan build Docker Depot** mempercepat gate untuk build dan test.
 
-## Kenapa GitHub Issues + Projects dijadikan board
+### Depot remote agent sandboxes (`depot claude`): opsional
 
-- **Semua state ada di GitHub**, jadi VM boleh mati kapan saja.
-- **Bisa dipakai dari HP**, dan notifikasinya gratis.
-- **Skill Matt sudah mendukung tracker GitHub** secara bawaan (sub-issue dan relasi blokir).
-- **Tidak perlu membangun UI** di awal. Kalau board GitHub nanti terasa kurang, tambahkan web board tipis yang membaca data yang sama.
+- Isinya: filesystem dan sesi Claude yang persisten, bisa di-resume dari web, $0,01/menit, 2 vCPU / 4 GB.
+- Batasannya: **hanya Claude Code**, belum ada API/SDK (yang ada CLI dengan `--wait`, `--output json`, `-p`), dan ukurannya kecil.
+- Kegunaannya: sebagai **"ambil alih"**. Kalau card masuk "Butuh kamu" dan kamu ingin langsung mengobrol dengan sesi itu dari browser, sandbox ini cocok. Tidak dijadikan jalur utama supaya harness tetap bebas (OpenCode).
 
-Alternatifnya Linear, kalau memang sudah dipakai. UI-nya lebih enak, tapi PR dan kodenya tetap di GitHub, jadi ada dua integrasi.
+## Secret: Doppler
 
-## VM yang tidak persisten: VM diperlakukan sebagai barang sekali pakai
+- Config Doppler khusus agent (`pandai-agent`) berisi **hanya**:
+  - API key LLM (dengan batas pengeluaran),
+  - token GitHub fine-grained,
+  - env untuk test (bukan production).
+- Disalurkan ke GitHub Actions lewat integrasi sync Doppler → GitHub secrets, atau service token + `doppler run`.
+- Secret production tidak pernah masuk ke job agent.
 
-Tidak ada data berharga yang hanya tinggal di VM.
+## Keamanan
 
-| Data | Tempat tinggal | Kalau VM mati |
-|---|---|---|
-| Ide, keputusan, tanya-jawab, status | GitHub Issues/Projects | Aman |
-| Kode yang sedang dikerjakan | Branch `pandai/<issue>`, di-push setiap checkpoint (gate lulus atau tiap iterasi) | Hilang paling banyak beberapa menit kerja |
-| State orkestrator | Dibangun ulang dari GitHub saat boot. SQLite hanya cache | Aman |
-| Log dan transkrip | Ringkasan di komentar issue. Log lengkap opsional ke object storage | Log rinci boleh hilang |
-| Toolchain dan auth | Skrip bootstrap idempotent (systemd). Secret disuntikkan saat boot, tidak disimpan di image | Dipasang ulang otomatis |
+- Repo private. Workflow hanya merespons issue dan komentar dari pemilik (`author_association: OWNER`), sebagai perlindungan dari prompt injection.
+- `permissions:` workflow dibatasi seminimal mungkin. `main` diproteksi, sehingga agent hanya bisa push ke branch `pandai/*`.
+- Proteksi test (lihat RISET §4): file test yang dikunci, tidak boleh menambah skip/only, dan pengecekan ini dijalankan di job CI terpisah.
 
-Saat VM baru hidup: bootstrap berjalan, repo di-clone ulang, lalu daemon mengambil card di kolom 🔁 Jalan dan melanjutkannya dari branch WIP terakhir.
+## VM 6 CPU / 16 GB
 
-Restic tidak wajib, karena tidak ada yang penting di disk. Restic hanya berguna kalau log lengkap atau cache build ingin disimpan.
+Tidak lagi dibutuhkan untuk Pandai. Pilihan pemakaiannya:
+- **Dev box interaktif** (OpenCode manual) kalau kamu ingin turun tangan langsung.
+- **Dimatikan saja**, karena Depot sudah menangani eksekusi.
 
-## Kapasitas dan sandbox
+Dengan desain ini, VM yang mati tidak menghilangkan apa pun. Semua state ada di GitHub dan semua kerja ada di branch yang sudah di-push.
 
-- **Model jalan di server provider**, jadi VM hanya menanggung proses agent (sekitar 0,5–1 GB per agent) ditambah build dan test. 16 GB cukup untuk **2–3 agent paralel**, sama dengan angka yang disarankan riset (paralel lebih lebar justru menurunkan hasil).
-- **VM itu sendiri adalah sandbox.** VM ini sekali pakai dan memang akan mati, jadi risiko agent merusak sistem terbatas.
-- **Pengaman praktis:**
-  - token GitHub fine-grained, terbatas ke repo terkait,
-  - branch protection di `main`, sehingga agent tidak bisa push ke `main`,
-  - API key dengan batas pengeluaran,
-  - tidak ada data pribadi di VM.
-- **Layanan pendukung per ticket** (Postgres, Redis) dijalankan dengan `docker compose` kalau perlu.
-- **Daytona:** belum perlu.
-  - Biayanya per jam, sinkronisasi git menambah latensi, dan secret harus masuk ke cloud.
-  - Pakai Daytona kalau butuh lebih dari 3 agent, build melebihi 16 GB, atau VM ingin dijadikan "otak" saja.
-  - Sandcastle sudah punya provider Daytona (`src/sandboxes/daytona.ts`), jadi nanti tinggal ganti konfigurasi.
-  - Dari dokumentasi Daytona: auto-stop default 15 menit, auto-archive untuk sandbox container, dan volume berbasis S3 yang bertahan walau sandbox dihapus.
+## Apa itu "Pandai" secara kode
 
-## Arsitektur
+- **CLI kecil (TypeScript):**
+  - `pandai tempa-round`, `pandai jalan <issue>`, `pandai schedule`, `pandai review`;
+  - parser ticket dan graf;
+  - driver agent (OpenCode/Claude headless, budget, watchdog);
+  - git checkpoint;
+  - penulis komentar dan status.
+- **Template workflow** (`.github/workflows/pandai-*.yml`) yang dipasang ke tiap repo proyek lewat `pandai init`.
+- **Prompt preamble** untuk menjalankan skill Matt tanpa pengawasan (lihat RISET §6.2).
+- **Tanpa** daemon, database, server, maupun UI di awal.
 
-- **Daemon `pandai` (Node + TypeScript) di VM:**
-  - poll GitHub setiap 30–60 detik, tanpa webhook atau tunnel, sehingga tahan restart;
-  - state machine per card;
-  - menjalankan agent (OpenCode/Claude) lewat Sandcastle (`noSandbox` atau `docker`);
-  - gate runner, operasi git, budget, watchdog stall.
-- **CLI:** `pandai ide`, `pandai bug`, `pandai status`, `pandai resume`.
-- **Skill:**
-  - dari Matt, dipakai apa adanya: `grilling`, `domain-modeling`, `to-spec`, `to-tickets`, `tdd`, `diagnosing-bugs`, `code-review`, `retro`;
-  - satu skill kecil `/pandai` untuk dipanggil dari chat.
-- **Pola:** mirip OpenAI Symphony (orkestrator yang digerakkan tracker, dengan poll dan rekonsiliasi), ditambah alur Matt dan gate deterministik.
-- **Pelajaran dari Forge dan bukti riset yang tetap dipakai:**
-  - proteksi test dan test-first yang dikunci,
-  - jalur keluar BLOCKED,
-  - gate ulang setelah merge,
-  - review sebagai saran,
-  - batas ronde perbaikan,
-  - circuit breaker untuk kuota,
-  - kill seluruh process group.
+## Urutan pembangunan
 
-## Urutan pembangunan (vertical slice)
-
-1. **Bug → Jalan → Tinjau.** Manfaatnya paling cepat terasa karena definisi selesainya jelas (test repro). Push WIP dan resume setelah VM mati sudah termasuk di slice ini.
-2. **Ide → Tempa asinkron → spec dan ticket di GitHub.**
-3. **Jalan multi-ticket.** Jadwal sesuai relasi blokir, 2 paralel, merge queue, gate ulang.
-4. **Bootstrap VM penuh dan laporan biaya.**
-5. **Opsional:** web board tipis, retro otomatis, provider Daytona.
+1. **Bug → Jalan → PR draft + CI gate.** Workflow `pandai-bug` dan `pandai-jalan` di runner Depot, secret dari Doppler, ditambah checkpoint push dan resume.
+2. **Tempa asinkron**: grilling di komentar, lalu `to-spec` dan `to-tickets` menjadi sub-issue.
+3. **Scheduler multi-ticket**, review dua sumbu, dan merge queue.
+4. **Sinkronisasi board Project**, ringkasan biaya per card, dan retro.
 
 ## Yang perlu dikonfirmasi
 
-1. Board pakai GitHub Issues + Projects, atau sudah memakai Linear?
-2. Harness utama: OpenCode (dengan model apa?) atau Claude Code?
-3. Repo private `bedulweb/pandai`: masih perlu dibuat manual dan diberi akses untuk GitHub App Claude.
+1. Harness utama dan modelnya: OpenCode (provider apa?) atau Claude Code (API key, atau token langganan Max?).
+2. Apakah kredit Depot berlaku untuk GitHub Actions runners (dan agent sandboxes)?
+3. Repo private `bedulweb/pandai`, plus satu repo proyek nyata sebagai uji coba pertama.
+
+## Sumber (Depot/Daytona, diakses 2026-10-11)
+
+- Depot remote agents: https://depot.dev/docs/agents/overview, https://depot.dev/docs/cli/reference/agents, https://depot.dev/blog/now-available-remote-agent-sandboxes
+- Depot GitHub Actions runners: https://depot.dev/docs/github-actions/overview, https://depot.dev/docs/github-actions/runner-types
+- Depot changelog: https://depot.dev/changelog
+- Daytona: https://www.daytona.io/docs/en/sandboxes/, https://www.daytona.io/docs/en/persistence/
