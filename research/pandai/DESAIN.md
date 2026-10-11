@@ -4,7 +4,7 @@ Tanggal: 2026-10-11. Riset dasar ada di `RISET.md`.
 
 **Perubahan dari v2.** GitHub Actions menjadi otak. Akibatnya tidak ada daemon yang harus terus hidup, tidak ada database, dan tidak perlu backup.
 
-**Revisi v3.1.**
+**Revisi v3.1** (prinsip: kredit Depot $5000 dihemat untuk sekitar 2 tahun, karena $5000 / 24 bulan ≈ $208/bulan, setara paket $200/bulan untuk CI saja).
 - **Kredit Depot (paket $200/bulan) tetap dipakai untuk CI saja**, supaya tidak tersedot oleh agent.
 - **Kerja agent pindah ke VM sendiri** (6 CPU / 16 GB, gratis), yang didaftarkan sebagai *self-hosted runner ephemeral*.
 
@@ -13,7 +13,8 @@ Tanggal: 2026-10-11. Riset dasar ada di `RISET.md`.
 | Otak: scheduler, sinkron label/board (hitungan detik) | GitHub-hosted `ubuntu-latest` | Kuota gratis Actions |
 | Agent: Tempa, Bug, Jalan, Review (menit sampai jam) | **Self-hosted runner di VM** (label `pandai`, 2–3 instance) | $0. Status per 2026: GitHub *menunda*, tapi belum membatalkan, rencana biaya $0,002/menit untuk self-hosted di repo private |
 | CI gate: test, typecheck, lint, proteksi test | **Depot** (pemakaian CI yang memang sudah ada) | Kredit Depot |
-| Overflow atau fitur "ambil alih" | Daytona/E2B (kredit gratis sekitar $200), opsional | Kredit gratis |
+| Fallback agent saat VM mati | GitHub-hosted runner (kuota gratis bulanan repo private) | Kuota gratis |
+| Fitur "ambil alih" (sesi persisten) dan fallback terakhir | Daytona (kredit $200, sekali pakai) | Kredit gratis |
 
 **Kalau VM mati:**
 1. Job agent yang sedang jalan gagal.
