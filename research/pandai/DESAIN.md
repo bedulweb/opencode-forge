@@ -169,7 +169,25 @@ Tujuannya: semua bisa dilakukan dari browser atau HP, tanpa membuka terminal.
 - **Bertindak:** `/siap`, menjawab "Butuh kamu", menjalankan ulang job, membatalkan, mengganti prioritas, atau membuat bug. **Setiap aksi yang mengubah sesuatu menampilkan tombol konfirmasi.**
 - **Alat (tools) agent:** GitHub API (issue, komentar, label, PR, check run, log Actions, `workflow_dispatch`, isi file repo) dan data biaya. Agent tidak punya shell maupun akses tulis langsung ke kode.
 
-### Chat lewat harness (ACP), bukan panggilan API mentah
+### Keputusan terbaru: chat memakai `opencode web`, bukan membangun UI chat sendiri
+
+ACP + bridge buatan sendiri (di bawah) tetap menjadi **opsi tahap lanjut**. Untuk mulai, ada jalan yang jauh lebih murah dibangun:
+
+- **Chat = `opencode web`** (UI web bawaan OpenCode) yang jalan di VM. Aksesnya lewat **Cloudflare Tunnel + Cloudflare Access** (gratis, login GitHub/email), jadi VM tidak perlu IP publik dan tidak perlu membuka port.
+  - Harness, skill Matt, MCP, subagent, dan izin semuanya bawaan, dengan nol kode UI chat.
+  - Bisa "add to home screen" di HP. `opencode attach` dari terminal juga berbagi sesi yang sama.
+- **Agent di chat bisa melihat board** lewat `gh` CLI dan skill kecil `pandai` (konvensi label, kolom, perintah). Pertanyaan seperti "progres #42?" dijawab dari GitHub.
+- **Dashboard kustom (Cloudflare) fokus** pada ringkasan, kanban, detail kartu, dan biaya. Setiap kartu punya tombol "Diskusikan di OpenCode" yang membuka sesi `opencode web` untuk kartu itu.
+- **Notifikasi:** bot Telegram (gratis, mudah) atau WhatsApp untuk "✋ Butuh kamu" dan PR siap ditinjau, dengan tombol cepat (`/siap`, buka dashboard).
+- **Kalau VM mati:** `opencode web` yang sama dijalankan di **sandbox Daytona** (persisten) lewat tunnel yang sama. Dashboard dan notifikasi tetap hidup.
+- **Kekurangan:**
+  - chat dan kanban ada di dua tab, bukan satu UI;
+  - sesi OpenCode tersimpan di disk mesin (ringkasan per kartu tetap disalin ke issue);
+  - `opencode web` terikat ke satu direktori (satu repo) per server;
+  - perilaku `opencode web` di OpenCode v2 perlu diverifikasi.
+- **Kapan pindah ke ACP + bridge:** kalau ingin chat menyatu di dashboard, atau ingin memakai Claude/Codex juga.
+
+### (Opsi lanjut) Chat lewat harness (ACP), bukan panggilan API mentah
 
 Chat dashboard memakai **harness yang sudah ada** (OpenCode, dan nanti Claude Agent atau Codex) lewat **Agent Client Protocol (ACP)**, yaitu JSON-RPC antara "client" dan agent. OpenCode mendukung ACP, Claude Agent lewat adapter `claude-agent-acp`, dan Codex lewat `codex-acp`.
 
