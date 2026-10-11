@@ -169,9 +169,29 @@ Tujuannya: semua bisa dilakukan dari browser atau HP, tanpa membuka terminal.
 - **Bertindak:** `/siap`, menjawab "Butuh kamu", menjalankan ulang job, membatalkan, mengganti prioritas, atau membuat bug. **Setiap aksi yang mengubah sesuatu menampilkan tombol konfirmasi.**
 - **Alat (tools) agent:** GitHub API (issue, komentar, label, PR, check run, log Actions, `workflow_dispatch`, isi file repo) dan data biaya. Agent tidak punya shell maupun akses tulis langsung ke kode.
 
+### Chat lewat harness (ACP), bukan panggilan API mentah
+
+Chat dashboard memakai **harness yang sudah ada** (OpenCode, dan nanti Claude Agent atau Codex) lewat **Agent Client Protocol (ACP)**, yaitu JSON-RPC antara "client" dan agent. OpenCode mendukung ACP, Claude Agent lewat adapter `claude-agent-acp`, dan Codex lewat `codex-acp`.
+
+- **Keuntungannya:** skill Matt, MCP, subagent, config, permission, dan akses ke codebase sama persis dengan yang dipakai di terminal maupun di runner. Permintaan izin dari agent (fitur ACP) ditampilkan sebagai tombol Izinkan/Tolak di dashboard.
+- **Konsekuensinya:** agent ACP adalah proses lokal (stdio), jadi harus jalan di mesin yang punya checkout repo. Cloudflare Worker tidak bisa menjalankan proses.
+- **Solusinya, jembatan (`pandai bridge`):**
+
+```
+Browser ⇄ (WebSocket) ⇄ Worker / Durable Object ⇄ (WebSocket keluar dari mesin) ⇄ pandai bridge ⇄ (stdio ACP) ⇄ opencode acp
+```
+
+  - Bridge membuka koneksi **keluar** ke Worker, sehingga VM tidak perlu IP publik atau port terbuka.
+  - Durable Object menyimpan sesi, menampung pesan, dan mengirim ulang pesan saat browser atau bridge tersambung kembali.
+- **Kalau VM mati:**
+  - **Chat ringan** (tanya progres, membaca board) tetap bisa: Worker memakai model langsung dengan tool GitHub yang read-only.
+  - **Chat harness** dipindah ke **sandbox Daytona**. Bridge jalan di sana, dengan sesi persisten yang bisa di-pause dan di-resume. Ini sekaligus menjadi fitur "ambil alih" (kredit $200).
+  - Dashboard menampilkan mode yang sedang aktif: 🟢 harness (VM), 🟡 harness (Daytona), atau ⚪ ringan.
+- **Riwayat:** percakapan per kartu disalin ke thread issue. Sesi ACP disimpan di harness itu sendiri, sehingga bisa dilanjutkan dengan `session/load` kalau agent mendukungnya.
+
 ### Teknologi
 - **Cloudflare Workers + Pages (paket gratis):** selalu hidup, tidak terpengaruh VM mati. Pilihan ini menggantikan Vercel, karena paket Hobby Vercel tidak untuk pemakaian komersial.
-- **Hono** (API) + **React** (UI, PWA agar bisa "install" di HP) + **Vercel AI SDK** (chat streaming dan tool calling; library-nya bisa jalan di mana saja).
+- **Hono** (API) + **React** (UI, PWA agar bisa "install" di HP) + **Durable Objects** (relay WebSocket untuk chat ACP). Vercel AI SDK hanya dipakai untuk mode chat ringan.
 - **D1** (SQLite Cloudflare) hanya untuk riwayat chat umum dan cache. Data utama tetap di GitHub.
 - **Update real-time:** webhook GitHub → Worker → UI (SSE). Sebagai cadangan, polling setiap 30 detik.
 - **Login:** GitHub OAuth, hanya akun yang di-allowlist.
