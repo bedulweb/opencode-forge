@@ -138,14 +138,53 @@ Kamu hanya terlibat di dua pos tetap, ditambah antrean interupsi yang dijawab as
   - penulis komentar dan status.
 - **Template workflow** (`.github/workflows/pandai-*.yml`) yang dipasang ke tiap repo proyek lewat `pandai init`.
 - **Prompt preamble** untuk menjalankan skill Matt tanpa pengawasan (lihat RISET §6.2).
-- **Tanpa** daemon, database, server, maupun UI di awal.
+- **Tanpa** daemon di VM. Satu-satunya server adalah dashboard (lihat di bawah), dan dashboard berjalan di platform serverless yang selalu hidup, bukan di VM.
+- **Bahasa:** TypeScript + Bun, dikompilasi menjadi satu binary (`bun build --compile`) untuk CLI.
+
+## Dashboard + chat AI
+
+Tujuannya: semua bisa dilakukan dari browser atau HP, tanpa membuka terminal.
+
+### Halaman
+1. **Ringkasan**
+   - jumlah kartu per kolom;
+   - antrean **✋ Butuh kamu**, ditampilkan paling atas;
+   - job yang sedang berjalan;
+   - status runner (apakah VM online?);
+   - biaya LLM minggu ini dan bulan ini;
+   - pemakaian menit Depot terhadap kuota.
+2. **Kanban.** Kartu bisa di-drag-and-drop. Memindahkan kartu = mengganti label, yang memicu workflow.
+3. **Detail kartu**
+   - timeline (perpindahan, tanya-jawab, commit);
+   - spec dan graf ticket;
+   - log job secara live;
+   - status PR dan CI;
+   - biaya dan jumlah percobaan.
+4. **Chat** (umum dan per kartu).
+
+### Chat AI: agent yang bisa membaca dan bertindak
+- **Bertanya:** misalnya "progres fitur checkout gimana?" atau "kenapa #42 gagal?". Agent membaca issue, PR, CI, log, dan biaya, lalu merangkum.
+- **Diskusi dan brainstorming:** di akhir obrolan, "jadikan kartu" akan membuat issue 💡 Ide berisi ringkasan diskusinya.
+- **Tempa sinkron:** grilling sebuah kartu langsung di chat. Pesan disalin ke thread issue, sehingga job Tempa dan riwayatnya tetap utuh. Pekerjaan berat (membaca seluruh codebase, menulis spec) didelegasikan ke job di runner.
+- **Bertindak:** `/siap`, menjawab "Butuh kamu", menjalankan ulang job, membatalkan, mengganti prioritas, atau membuat bug. **Setiap aksi yang mengubah sesuatu menampilkan tombol konfirmasi.**
+- **Alat (tools) agent:** GitHub API (issue, komentar, label, PR, check run, log Actions, `workflow_dispatch`, isi file repo) dan data biaya. Agent tidak punya shell maupun akses tulis langsung ke kode.
+
+### Teknologi
+- **Cloudflare Workers + Pages (paket gratis):** selalu hidup, tidak terpengaruh VM mati. Pilihan ini menggantikan Vercel, karena paket Hobby Vercel tidak untuk pemakaian komersial.
+- **Hono** (API) + **React** (UI, PWA agar bisa "install" di HP) + **Vercel AI SDK** (chat streaming dan tool calling; library-nya bisa jalan di mana saja).
+- **D1** (SQLite Cloudflare) hanya untuk riwayat chat umum dan cache. Data utama tetap di GitHub.
+- **Update real-time:** webhook GitHub → Worker → UI (SSE). Sebagai cadangan, polling setiap 30 detik.
+- **Login:** GitHub OAuth, hanya akun yang di-allowlist.
+- **Secret:** Doppler → Cloudflare secrets (integrasi bawaan Doppler).
+- **Model chat:** provider yang sama dengan OpenCode. Model cepat dan murah untuk tanya-jawab, model kuat untuk diskusi desain.
 
 ## Urutan pembangunan
 
 1. **Bug → Jalan → PR draft + CI gate.** Workflow `pandai-bug` dan `pandai-jalan` di self-hosted runner VM, CI gate di Depot, secret dari Doppler, ditambah checkpoint push dan resume serta bootstrap VM.
-2. **Tempa asinkron**: grilling di komentar, lalu `to-spec` dan `to-tickets` menjadi sub-issue.
-3. **Scheduler multi-ticket**, review dua sumbu, dan merge queue.
-4. **Sinkronisasi board Project**, ringkasan biaya per card, dan retro.
+2. **Dashboard v1:** halaman ringkasan, kanban, detail kartu (read-only), dan chat tanya-progres.
+3. **Tempa** (asinkron di komentar dan sinkron di chat dashboard), lalu `to-spec` dan `to-tickets` menjadi sub-issue.
+4. **Aksi dari dashboard** (drag kanban, `/siap`, menjawab, rerun), **scheduler multi-ticket**, review dua sumbu, dan merge queue.
+5. **Real-time** (webhook + SSE), log live, biaya per kartu, dan retro.
 
 ## Yang perlu dikonfirmasi
 
