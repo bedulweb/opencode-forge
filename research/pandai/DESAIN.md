@@ -65,6 +65,24 @@ Kamu hanya terlibat di dua pos tetap, ditambah antrean interupsi yang dijawab as
 - Batasannya: **hanya Claude Code**, belum ada API/SDK (yang ada CLI dengan `--wait`, `--output json`, `-p`), dan ukurannya kecil.
 - Kegunaannya: sebagai **"ambil alih"**. Kalau card masuk "Butuh kamu" dan kamu ingin langsung mengobrol dengan sesi itu dari browser, sandbox ini cocok. Tidak dijadikan jalur utama supaya harness tetap bebas (OpenCode).
 
+### Daytona / E2B (kredit gratis sekitar $200): bukan jalur utama, tapi lapisan sandbox dibuat bisa diganti
+
+- **Alasan utamanya bukan harga.** Dengan tarif sekitar $0,08/jam untuk sandbox kecil, $200 masih setara ratusan jam. Alasannya **jumlah komponen yang bergerak**. Daytona dan E2B hanya *kotak* tempat menjalankan perintah. Pandai tetap butuh *otak* (pemicu dari issue, scheduler, log, secret, status check) yang hidup di tempat lain. GitHub Actions di runner Depot memberi otak dan otot sekaligus, dan sudah terintegrasi langsung dengan board, required checks, dan merge queue.
+- **Kalau Daytona/E2B dipakai sebagai otot,** alurnya jadi: job Actions membuat sandbox → menjalankan agent di dalamnya → memantau → membersihkan. Konsekuensinya:
+  - ada satu hop tambahan,
+  - runner menunggu idle sementara sandbox bekerja (dua tagihan berjalan bersamaan); alternatifnya pola fire-and-forget yang dipantau cron (lebih rumit),
+  - secret harus disalurkan ke vendor ketiga,
+  - sinkronisasi git dua arah,
+  - satu akun lagi yang harus dikelola.
+- **Daytona/E2B lebih unggul untuk:**
+  - sandbox persisten yang bisa di-pause dan di-resume dengan filesystem tetap utuh, misalnya sesi Tempa live atau "ambil alih" yang dibuka lagi besok;
+  - paralelisme yang melonjak;
+  - kode yang tidak tepercaya.
+- **Keputusannya:**
+  - antarmuka sandbox di Pandai dibuat bisa diganti (Sandcastle sudah punya provider Daytona);
+  - kredit $200 dipakai untuk eksperimen fitur "ambil alih";
+  - pindah ke Daytona/E2B sebagai jalur utama hanya kalau runner Actions terbukti kurang.
+
 ## Secret: Doppler
 
 - Config Doppler khusus agent (`pandai-agent`) berisi **hanya**:
